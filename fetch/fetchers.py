@@ -1,0 +1,117 @@
+import requests
+import numpy as np
+from datetime import datetime, timedelta
+import os
+from dotenv import load_dotenv
+from utils import location
+
+load_dotenv()
+
+def fetch_current(date: datetime, lat: float, lot: float):
+    # base_url = "http://www.khoa.go.kr/api/oceangrid/tidalCurrentArea/search.do"
+    base_url = os.environ.get('CURRENT_API_URL')
+
+    target_date = date.strftime("%Y%m%d")
+    target_hour = date.strftime("%H")
+    target_minute = date.strftime("%M")
+    
+    min_y = int(np.floor(lat))
+    max_y = int(np.ceil(lat))
+    min_x = int(np.floor(lot))
+    max_x = int(np.ceil(lot))
+
+    params = {
+        "ServiceKey": os.environ.get('CURRENT_API_KEY'),
+        "Date": target_date,
+        "Hour": target_hour,
+        "Minute": target_minute,
+        "MaxX": max_x,
+        "MinX": min_x,
+        "MaxY": max_y,
+        "MinY": min_y,
+        "ResultType": "json"
+    }
+
+    response = requests.get(base_url, params=params)
+
+    if response.status_code != 200:
+        raise Exception(f"API 요청 실패: {response.status_code}")
+
+    try:
+        data = response.json()
+    except ValueError as e:
+        raise Exception(f"JSON 파싱 실패: {response.text}")
+
+    if 'result' not in data or 'data' not in data['result']:
+        raise Exception("응답 데이터 형식이 올바르지 않습니다")
+
+    total_current_dir = 0.0
+    total_current_speed = 0.0
+    cnt = 0
+
+    for d in data['result']['data']:
+        if 'current_dir' not in d or 'current_speed' not in d:
+            continue
+        total_current_dir += float(d['current_dir'])
+        total_current_speed += float(d['current_speed'])
+        cnt += 1
+
+    if cnt == 0:
+        raise Exception("유효한 데이터가 없습니다")
+
+    return total_current_dir / cnt, total_current_speed / cnt
+
+def fetch_wind(lat: float, lot: float):
+    # base_url = "https://apis.data.go.kr/1192136/surveyWind/GetSurveyWindApiService"
+    base_url = os.environ.get('WIND_API_URL')
+
+    nearest = location.find_nearest_location(lat, lot)
+
+    params = {
+        "serviceKey": os.environ.get('WIND_API_KEY'),
+        "obsCode": nearest.code,
+        "min": 60,
+        "numOfRows": 300,
+        "type": "json"
+    }
+
+    response = requests.get(base_url, params=params)
+
+    if response.status_code != 200:
+        raise Exception(f"API 요청 실패: {response.status_code}")
+
+    try:
+        data = response.json()
+    except ValueError as e:
+        raise Exception(f"JSON 파싱 실패: {response.text}")
+
+    # header 검증
+    if 'header' not in data:
+        raise Exception("응답 데이터 형식이 올바르지 않습니다")
+    
+    if data['header']['resultCode'] != "00":
+        raise Exception(f"API 오류: {data['header'].get('resultMsg', 'Unknown error')}")
+
+    # body 검증
+    if 'body' not in data or 'items' not in data['body'] or 'item' not in data['body']['items']:
+        raise Exception("응답 데이터 형식이 올바르지 않습니다")
+
+    items = data['body']['items']['item']
+    
+    total_wind_dir = 0.0
+    total_wind_speed = 0.0
+    cnt = 0
+
+    for item in items:
+        if 'wndrct' not in item or 'wspd' not in item:
+            continue
+        if item['wndrct'] is None or item['wspd'] is None:
+            continue
+        total_wind_dir += float(item['wndrct'])
+        total_wind_speed += float(item['wspd'])
+        cnt += 1
+
+    if cnt == 0:
+        raise Exception("유효한 데이터가 없습니다")
+
+    return total_wind_dir / cnt, total_wind_speed / cnt

@@ -7,7 +7,7 @@ import os
 # 상위 디렉토리의 api 모듈을 import하기 위해 경로 추가
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from api.fetchers import fetch_current
+from fetch.fetchers import fetch_current
 
 
 class TestCurrent:
