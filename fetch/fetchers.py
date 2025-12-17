@@ -45,21 +45,29 @@ def fetch_current(date: datetime, lat: float, lot: float):
     if 'result' not in data or 'data' not in data['result']:
         raise Exception("응답 데이터 형식이 올바르지 않습니다")
 
-    total_current_dir = 0.0
-    total_current_speed = 0.0
-    cnt = 0
+    # 요청한 위경도와 가장 가까운 데이터 찾기
+    min_distance = float('inf')
+    closest_data = None
 
     for d in data['result']['data']:
         if 'current_dir' not in d or 'current_speed' not in d:
             continue
-        total_current_dir += float(d['current_dir'])
-        total_current_speed += float(d['current_speed'])
-        cnt += 1
+        if 'pre_lat' not in d or 'pre_lon' not in d:
+            continue
+        
+        # 위경도 간의 거리 계산 (유클리드 거리)
+        data_lat = float(d['pre_lat'])
+        data_lon = float(d['pre_lon'])
+        distance = np.sqrt((lat - data_lat)**2 + (lot - data_lon)**2)
+        
+        if distance < min_distance:
+            min_distance = distance
+            closest_data = d
 
-    if cnt == 0:
+    if closest_data is None:
         raise Exception("유효한 데이터가 없습니다")
 
-    return total_current_dir / cnt, total_current_speed / cnt
+    return float(closest_data['current_dir']), float(closest_data['current_speed'])
 
 def fetch_wind(lat: float, lot: float):
     # base_url = "https://apis.data.go.kr/1192136/surveyWind/GetSurveyWindApiService"
