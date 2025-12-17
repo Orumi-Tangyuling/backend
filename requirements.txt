@@ -13,3 +13,6 @@ pymysql==1.1.0
 cryptography==41.0.7
 passlib==1.7.4
 bcrypt==4.0.1
+langchain==0.1.0
+langchain-openai==0.0.2
+langchain-community==0.0.10
