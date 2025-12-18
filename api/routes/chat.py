@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 import os
@@ -6,6 +6,9 @@ import requests
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableLambda
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from sqlalchemy.orm import Session
+from core.database import get_db
+from api.routes.dashboard import get_dashboard
 
 load_dotenv()
 
@@ -174,8 +177,47 @@ def format_chat_history(messages: List[ChatMessage]):
     return formatted
 
 
+async def get_prediction_context(db: Session) -> str:
+    """예측 데이터를 조회하여 챗봇 컨텍스트 생성"""
+    try:
+        dashboard_data = await get_dashboard(db)
+        
+        # 월간 추이 정보
+        trends_text = "\n".join([
+            f"  - {t.month} {t.year}: {t.total_amount:.0f}kg"
+            for t in dashboard_data.monthly_trends[-3:]
+        ])
+        
+        # 위험 지역 TOP 5
+        risk_areas_text = "\n".join([
+            f"  - {area.beach_name}: {area.predicted_amount:.0f}kg (위험도: {area.risk_level.value}, 조치: {area.action_required.value})"
+            for area in dashboard_data.risk_areas[:5]
+        ])
+        
+        context = f"""\n[현재 예측 데이터 - {dashboard_data.target_month}]
+
+📊 월간 요약:
+- 총 예측 유입량: {dashboard_data.summary.total_predicted_amount:.0f}kg
+- 전월 대비: {dashboard_data.summary.previous_month_change:+.1f}%
+- 위험 지역: {dashboard_data.summary.high_risk_count}개소
+- 주의 지역: {dashboard_data.summary.medium_risk_count}개소
+- 즉시 조치 필요: {dashboard_data.summary.immediate_action_count}개소
+
+📈 최근 3개월 추이:
+{trends_text}
+
+⚠️ 위험 지역 TOP 5:
+{risk_areas_text}
+
+위 데이터를 참고하여 답변해줘.
+"""
+        return context
+    except Exception as e:
+        return "\n[예측 데이터를 불러오는 중 오류가 발생했어. 일반적인 답변만 가능해.]\n"
+
+
 @router.post("/message/user", response_model=ChatResponse)
-async def chat_user(request: ChatRequest):
+async def chat_user(request: ChatRequest, db: Session = Depends(get_db)):
     """
     일반 사용자용 챗봇 (친근한 반말 톤)
     
@@ -189,12 +231,18 @@ async def chat_user(request: ChatRequest):
         # 이전 대화 내역 포맷팅
         chat_history = format_chat_history(memory[-10:])  # 최근 10개만 사용
         
+        # 예측 데이터 컨텍스트 가져오기
+        prediction_context = await get_prediction_context(db)
+        
         # 사용자 메시지 저장
         memory.append(ChatMessage(role="user", content=request.message))
         
+        # 사용자 입력에 예측 데이터 컨텍스트 추가
+        enhanced_input = f"{prediction_context}\n\n사용자 질문: {request.message}"
+        
         # LangChain을 통한 Alan AI API 호출
         response_text = user_chat_chain.invoke({
-            "input": request.message,
+            "input": enhanced_input,
             "chat_history": chat_history
         })
         
@@ -211,7 +259,7 @@ async def chat_user(request: ChatRequest):
 
 
 @router.post("/message/admin", response_model=ChatResponse)
-async def chat_admin(request: ChatRequest):
+async def chat_admin(request: ChatRequest, db: Session = Depends(get_db)):
     """
     행정 사용자용 전문가 챗봇 (공식적인 존댓말 톤)
     
@@ -225,12 +273,18 @@ async def chat_admin(request: ChatRequest):
         # 이전 대화 내역 포맷팅
         chat_history = format_chat_history(memory[-10:])  # 최근 10개만 사용
         
+        # 예측 데이터 컨텍스트 가져오기
+        prediction_context = await get_prediction_context(db)
+        
         # 사용자 메시지 저장
         memory.append(ChatMessage(role="user", content=request.message))
         
+        # 사용자 입력에 예측 데이터 컨텍스트 추가
+        enhanced_input = f"{prediction_context}\n\n담당자 질의: {request.message}"
+        
         # LangChain을 통한 Alan AI API 호출
         response_text = admin_chat_chain.invoke({
-            "input": request.message,
+            "input": enhanced_input,
             "chat_history": chat_history
         })
         
