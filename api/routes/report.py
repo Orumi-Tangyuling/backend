@@ -6,6 +6,7 @@ from io import BytesIO
 from pydantic import BaseModel
 from typing import Optional
 import os
+from urllib.parse import quote
 
 # ReportLab imports
 from reportlab.lib.pagesizes import A4
@@ -423,14 +424,15 @@ async def generate_monthly_report(
         
         # PDF 파일명
         year, month = dashboard_data.target_month.split('-')
-        filename = f"jeju_marine_debris_report_{year}_{month}.pdf"
+        filename = f"제주_해양쓰레기_월간_예측_보고서_{year}년_{month}월.pdf"
+        encoded_filename = quote(filename)
         
         # Response 반환
         return Response(
             content=buffer.getvalue(),
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f"attachment; filename={filename}"
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
             }
         )
         
