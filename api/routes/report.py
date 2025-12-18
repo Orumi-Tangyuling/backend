@@ -81,7 +81,7 @@ def create_pdf_report(dashboard_data, buffer, organization_name="해양환경공
         pagesize=A4,
         rightMargin=20*mm,
         leftMargin=20*mm,
-        topMargin=20*mm,
+        topMargin=10*mm,
         bottomMargin=20*mm
     )
     
@@ -96,7 +96,7 @@ def create_pdf_report(dashboard_data, buffer, organization_name="해양환경공
         fontSize=20,
         textColor=colors.HexColor('#1a1a1a'),
         alignment=TA_CENTER,
-        spaceAfter=5*mm
+        spaceAfter=2*mm
     )
     
     # 부제목 스타일
@@ -107,7 +107,7 @@ def create_pdf_report(dashboard_data, buffer, organization_name="해양환경공
         fontSize=14,
         textColor=colors.HexColor('#666666'),
         alignment=TA_CENTER,
-        spaceAfter=10*mm
+        spaceAfter=3*mm
     )
     
     # 섹션 제목 스타일
@@ -170,7 +170,7 @@ def create_pdf_report(dashboard_data, buffer, organization_name="해양환경공
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
             ]))
             elements.append(header_table)
-            elements.append(Spacer(1, 3*mm))
+            elements.append(Spacer(1, 1*mm))
         except Exception as e:
             print(f"로고 이미지 로드 실패: {e}")
     else:
@@ -185,14 +185,13 @@ def create_pdf_report(dashboard_data, buffer, organization_name="해양환경공
         )
         elements.append(Paragraph(f"{organization_name}", org_style))
         elements.append(Paragraph(f"발행 연도: {current_year}-{month}-REPORT", org_style))
-        elements.append(Spacer(1, 3*mm))
+        elements.append(Spacer(1, 1*mm))
     
     # 1. 제목
     title = Paragraph(f"제주 해양쓰레기 월간 예측 보고서", title_style)
     subtitle = Paragraph(f"{year}년 {month}월", subtitle_style)
     elements.append(title)
     elements.append(subtitle)
-    elements.append(Spacer(1, 1*mm))
     
     # 구분선 추가
     line_drawing = Drawing(170*mm, 1*mm)
@@ -201,7 +200,7 @@ def create_pdf_report(dashboard_data, buffer, organization_name="해양환경공
     line.strokeWidth = 0.5
     line_drawing.add(line)
     elements.append(line_drawing)
-    elements.append(Spacer(1, 5*mm))
+    elements.append(Spacer(1, 3*mm))
     
     # 2. 요약 섹션
     summary_title = Paragraph("요약", section_title_style)
@@ -232,10 +231,10 @@ def create_pdf_report(dashboard_data, buffer, organization_name="해양환경공
     # 그래프 생성 (80mm x 60mm)
     drawing = Drawing(80*mm, 60*mm)
     chart = HorizontalLineChart()
-    chart.x = 0
+    chart.x = 3*mm
     chart.y = 8*mm
     chart.height = 48*mm
-    chart.width = 75*mm
+    chart.width = 72*mm
     
     # 데이터 설정 (6개월)
     months_data = dashboard_data.monthly_trends
@@ -370,20 +369,19 @@ def create_pdf_report(dashboard_data, buffer, organization_name="해양환경공
     
     elements.append(Spacer(1, 10*mm))
     
-    # 6. 하단 정보
-    footer_text = f"보고서 생성일: {date.today().strftime('%Y년 %m월 %d일')}"
-    footer_style = ParagraphStyle(
-        'Footer',
-        parent=styles['Normal'],
-        fontName=korean_font,
-        fontSize=8,
-        textColor=colors.grey,
-        alignment=TA_CENTER
-    )
-    elements.append(Paragraph(footer_text, footer_style))
+    # 페이지 하단에 고정될 footer 함수 정의
+    def add_page_footer(canvas, doc):
+        """모든 페이지 하단에 보고서 생성일 추가"""
+        canvas.saveState()
+        footer_text = f"보고서 생성일: {date.today().strftime('%Y년 %m월 %d일')}"
+        canvas.setFont(korean_font, 8)
+        canvas.setFillColor(colors.grey)
+        # 페이지 하단 중앙에 배치 (하단에서 10mm)
+        canvas.drawCentredString(A4[0] / 2, 10*mm, footer_text)
+        canvas.restoreState()
     
-    # PDF 생성
-    doc.build(elements)
+    # PDF 생성 (footer를 페이지 하단에 고정)
+    doc.build(elements, onFirstPage=add_page_footer, onLaterPages=add_page_footer)
 
 
 @router.post("/monthly")
