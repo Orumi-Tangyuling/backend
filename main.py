@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from api.routes import trash, user, chat, dashboard
+from api.routes import trash, user, chat, dashboard, report
 
 app = FastAPI(
     title="Tangyuling API",
@@ -12,6 +12,7 @@ app.include_router(trash.router, prefix="/api")
 app.include_router(user.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
+app.include_router(report.router, prefix="/api")
 
 
 @app.get("/")
