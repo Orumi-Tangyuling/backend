@@ -115,10 +115,10 @@ def create_pdf_report(dashboard_data, buffer, organization_name="해양환경공
         'SectionTitle',
         parent=styles['Heading2'],
         fontName='Korean-Bold' if 'Korean-Bold' in pdfmetrics.getRegisteredFontNames() else korean_font,
-        fontSize=16,
+        fontSize=14,
         textColor=colors.HexColor('#1a1a1a'),
-        spaceAfter=3*mm,
-        spaceBefore=5*mm
+        spaceAfter=2*mm,
+        spaceBefore=4*mm
     )
     
     # 본문 스타일
@@ -228,12 +228,12 @@ def create_pdf_report(dashboard_data, buffer, organization_name="해양환경공
     trend_title = Paragraph("월간 유입량 추이", section_title_style)
     trend_spacer = Spacer(1, 2*mm)
     
-    # 그래프 생성 (80mm x 60mm)
-    drawing = Drawing(80*mm, 60*mm)
+    # 그래프 생성 (80mm x 45mm)
+    drawing = Drawing(80*mm, 45*mm)
     chart = HorizontalLineChart()
     chart.x = 3*mm
-    chart.y = 8*mm
-    chart.height = 48*mm
+    chart.y = 5*mm
+    chart.height = 38*mm
     chart.width = 72*mm
     
     # 데이터 설정 (6개월)
@@ -289,7 +289,7 @@ def create_pdf_report(dashboard_data, buffer, organization_name="해양환경공
     risk_table = Table(
         risk_table_data, 
         colWidths=[21*mm, 19*mm, 17*mm, 23*mm],  # 총 80mm
-        rowHeights=[10*mm] + [10*mm] * 5  # 헤더 10mm + 데이터 행 10mm x 5 = 총 60mm
+        rowHeights=[8*mm] + [8*mm] * 5  # 헤더 7mm + 데이터 행 7mm x 5 = 총 42mm
     )
     risk_table.setStyle(TableStyle([
         # 헤더 스타일
@@ -330,7 +330,107 @@ def create_pdf_report(dashboard_data, buffer, organization_name="해양환경공
     ]))
     
     elements.append(combined_table)
-    elements.append(Spacer(1, 8*mm))
+    elements.append(Spacer(1, 6*mm))
+    
+    # 4. 방문객 통계 그래프 (가로로 길게)
+    visitor_title = Paragraph("제주 해안별 월별 방문객 추이 (2024.01 - 2025.10)", section_title_style)
+    elements.append(visitor_title)
+    elements.append(Spacer(1, 2*mm))
+    
+    # 방문객 데이터를 지역별로 정리
+    visitor_by_region = {}
+    all_months = set()
+    
+    for stat in dashboard_data.visitor_stats:
+        if stat.region not in visitor_by_region:
+            visitor_by_region[stat.region] = {}
+        visitor_by_region[stat.region][stat.year_month] = stat.visitor
+        all_months.add(stat.year_month)
+    
+    # 월 정렬
+    sorted_months = sorted(list(all_months))
+    
+    # 차트 데이터 구성 (각 지역별 라인)
+    chart_data = []
+    region_names = []
+    
+    for region in sorted(visitor_by_region.keys()):
+        region_data = []
+        for month in sorted_months:
+            value = visitor_by_region[region].get(month, 0)
+            region_data.append(value)
+        chart_data.append(region_data)
+        region_names.append(region)
+    
+    # 방문객 그래프 생성 (가로로 길게: 170mm x 55mm)
+    visitor_drawing = Drawing(170*mm, 60*mm)
+    visitor_chart = HorizontalLineChart()
+    visitor_chart.x = 10*mm
+    visitor_chart.y = 8*mm
+    visitor_chart.height = 44*mm
+    visitor_chart.width = 150*mm
+    
+    # 데이터 설정
+    visitor_chart.data = chart_data
+    
+    # X축 설정 (월 레이블)
+    month_labels = [m.split('-')[1] + '월' for m in sorted_months]
+    visitor_chart.categoryAxis.categoryNames = month_labels
+    visitor_chart.categoryAxis.labels.fontName = korean_font
+    visitor_chart.categoryAxis.labels.fontSize = 6
+    visitor_chart.categoryAxis.labels.angle = 45
+    
+    # Y축 설정
+    visitor_chart.valueAxis.labels.fontName = korean_font
+    visitor_chart.valueAxis.labels.fontSize = 7
+    visitor_chart.valueAxis.valueMin = 0
+    
+    if chart_data:
+        all_values = [val for line in chart_data for val in line]
+        max_visitor = max(all_values) if all_values else 100000
+        visitor_chart.valueAxis.valueMax = max_visitor * 1.1
+        visitor_chart.valueAxis.valueStep = max_visitor / 5
+    
+    # 각 라인 스타일 설정 (다양한 색상)
+    line_colors = [
+        colors.HexColor('#4A90E2'),  # 파란색
+        colors.HexColor('#E24A4A'),  # 빨간색
+        colors.HexColor('#4AE290'),  # 초록색
+        colors.HexColor('#E2904A'),  # 주황색
+        colors.HexColor('#904AE2'),  # 보라색
+        colors.HexColor('#E2E24A'),  # 노란색
+        colors.HexColor('#4AE2E2'),  # 청록색
+        colors.HexColor('#E24AE2'),  # 마젠타
+        colors.HexColor('#90E24A'),  # 연두색
+    ]
+    
+    for i in range(len(chart_data)):
+        visitor_chart.lines[i].strokeColor = line_colors[i % len(line_colors)]
+        visitor_chart.lines[i].strokeWidth = 1.5
+        visitor_chart.lines[i].symbol = None
+    
+    # 그리드
+    visitor_chart.categoryAxis.visibleGrid = True
+    visitor_chart.valueAxis.visibleGrid = True
+    visitor_chart.categoryAxis.gridStrokeColor = colors.HexColor('#E0E0E0')
+    visitor_chart.valueAxis.gridStrokeColor = colors.HexColor('#E0E0E0')
+    
+    visitor_drawing.add(visitor_chart)
+    
+    # 범례 추가 (차트 오른쪽)
+    legend_x = 162*mm
+    legend_y = 48*mm
+    for i, region in enumerate(region_names):
+        # 색상 박스
+        visitor_drawing.add(Line(legend_x, legend_y - i*4*mm, legend_x + 3*mm, legend_y - i*4*mm,
+                                strokeColor=line_colors[i % len(line_colors)], strokeWidth=2))
+        # 텍스트
+        from reportlab.graphics.shapes import String
+        visitor_drawing.add(String(legend_x + 4*mm, legend_y - i*4*mm - 1*mm, region,
+                                   fontName=korean_font, fontSize=6, fillColor=colors.black))
+    
+    elements.append(visitor_drawing)
+    elements.append(Spacer(1, 4*mm))
     
     # 5. 분석 섹션
     analysis_title = Paragraph("분석", section_title_style)
@@ -365,9 +465,7 @@ def create_pdf_report(dashboard_data, buffer, organization_name="해양환경공
     
     for item in analysis_items:
         elements.append(Paragraph(f"• {item}", body_style))
-        elements.append(Spacer(1, 3*mm))
-    
-    elements.append(Spacer(1, 10*mm))
+        elements.append(Spacer(1, 2*mm))
     
     # 페이지 하단에 고정될 footer 함수 정의
     def add_page_footer(canvas, doc):

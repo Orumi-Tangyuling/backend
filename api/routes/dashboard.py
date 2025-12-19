@@ -6,6 +6,7 @@ from sqlalchemy import func, extract
 from core.database import get_db
 from models.beach_prediction import BeachPrediction
 from models.beach import Beach
+from models.coastal_visitor_stats import CoastalVisitorStats
 from typing import List
 from enum import Enum
 
@@ -52,11 +53,18 @@ class RiskArea(BaseModel):
     longitude: float
 
 
+class VisitorStats(BaseModel):
+    region: str  # 지역명
+    year_month: str  # YYYY-MM
+    visitor: int  # 방문객 수
+
+
 class DashboardResponse(BaseModel):
     target_month: str  # "2025-12"
     summary: MonthlySummary
     monthly_trends: List[MonthlyTrend]
     risk_areas: List[RiskArea]
+    visitor_stats: List[VisitorStats]  # 방문객 통계 데이터
 
 
 def calculate_risk_level(trash_amount: float) -> RiskLevel:
@@ -212,7 +220,20 @@ async def get_dashboard(db: Session = Depends(get_db)):
                 total_amount=round(month_total, 2)
             ))
         
-        # 5. 응답 구성
+        # 5. 방문객 통계 데이터 조회 (전체 데이터)
+        visitor_stats = []
+        stats_data = db.query(CoastalVisitorStats).order_by(
+            CoastalVisitorStats.year_month
+        ).all()
+        
+        for stat in stats_data:
+            visitor_stats.append(VisitorStats(
+                region=stat.region,
+                year_month=stat.year_month,
+                visitor=stat.visitor
+            ))
+        
+        # 6. 응답 구성
         summary = MonthlySummary(
             total_predicted_amount=round(current_total, 2),
             previous_month_change=round(change_rate, 1),
@@ -226,7 +247,8 @@ async def get_dashboard(db: Session = Depends(get_db)):
             target_month=f"{current_year}-{current_month:02d}",
             summary=summary,
             monthly_trends=monthly_trends,
-            risk_areas=risk_areas
+            risk_areas=risk_areas,
+            visitor_stats=visitor_stats
         )
         
         return response
