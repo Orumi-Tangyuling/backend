@@ -65,8 +65,8 @@ def alan_question(content: str) -> str:
     if response.status_code == 200:
         # 응답 본문(JSON 형태)을 파이썬 dict로 변환
         result = response.json()
-        # 응답에서 텍스트 추출 (API 응답 구조에 따라 조정 필요)
-        return result.get("answer", result.get("response", str(result)))
+        # 응답에서 content만 추출
+        return result.get("content", result.get("answer", result.get("response", str(result))))
     else:
         # 오류가 난 경우
         print("오류 발생:", response.text)
