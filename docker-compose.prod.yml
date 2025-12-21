@@ -27,6 +27,8 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-root}@mysql:3306/${MYSQL_DATABASE:-tangyuling}
+      - TANGYULING_MYSQL_HOST=mysql
+      - TANGYULING_MYSQL_PORT=3306
       - TZ=Asia/Seoul
     env_file:
       - .env
