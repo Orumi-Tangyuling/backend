@@ -91,26 +91,26 @@ jobs:
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
           
           # 최신 이미지 pull
-          docker-compose -f docker-compose.prod.yml pull
+          docker compose -f docker-compose.prod.yml pull
           
           # 기존 컨테이너 중지 및 제거
-          docker-compose -f docker-compose.prod.yml down
+          docker compose -f docker-compose.prod.yml down
           
           # 새 컨테이너 시작
-          docker-compose -f docker-compose.prod.yml up -d
+          docker compose -f docker-compose.prod.yml up -d
           
           # 사용하지 않는 이미지 정리
           docker image prune -af
           
           # 로그 확인 (최근 50줄)
-          docker-compose -f docker-compose.prod.yml logs --tail=50
+          docker compose -f docker-compose.prod.yml logs --tail=50
         ENDSSH
 
     - name: Verify deployment
       run: |
         ssh -p 4242 -i ~/.ssh/kanghyki blue@hyki.me << 'ENDSSH'
           cd ~/tangyuling
-          docker-compose -f docker-compose.prod.yml ps
+          docker compose -f docker-compose.prod.yml ps
         ENDSSH
 
     - name: Cleanup
