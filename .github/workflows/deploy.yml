@@ -96,14 +96,15 @@ jobs:
             # Docker Hub 로그인
             echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
             
-            # 최신 이미지 pull
-            docker compose -f docker-compose.prod.yml pull
+            # 최신 이미지 pull (api 서비스만)
+            docker compose -f docker-compose.prod.yml pull api
             
-            # 기존 컨테이너 중지 및 제거
-            docker compose -f docker-compose.prod.yml down
+            # 기존 api 컨테이너 중지 및 제거
+            docker compose -f docker-compose.prod.yml stop api
+            docker compose -f docker-compose.prod.yml rm -f api
             
-            # 새 컨테이너 시작
-            docker compose -f docker-compose.prod.yml up -d
+            # 새 api 컨테이너 시작
+            docker compose -f docker-compose.prod.yml up -d api
             
             # 사용하지 않는 이미지 정리
             docker image prune -af
