@@ -1,0 +1,45 @@
+services:
+  mysql:
+    image: mysql:8
+    container_name: tangyuling-mysql-prod
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-tangyuling}
+      TZ: Asia/Seoul
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - tangyuling-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  api:
+    image: ${DOCKER_USERNAME}/tangyuling-api:latest
+    container_name: tangyuling-api-prod
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-root}@mysql:3306/${MYSQL_DATABASE:-tangyuling}
+      - TZ=Asia/Seoul
+    env_file:
+      - .env
+    networks:
+      - tangyuling-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: always
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+volumes:
+  mysql_data:
+
+networks:
+  tangyuling-network:
+    driver: bridge
