@@ -116,7 +116,7 @@ jobs:
         run: |
           ssh -p 4242 -i ~/.ssh/kanghyki blue@hyki.me << 'ENDSSH'
             cd ~/tangyuling
-            docker-compose -f docker-compose.prod.yml ps
+            docker compose -f docker-compose.prod.yml ps
           ENDSSH
 
       - name: Cleanup
