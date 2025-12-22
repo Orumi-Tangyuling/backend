@@ -6,6 +6,7 @@ import requests
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableLambda
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage, AIMessage
 from sqlalchemy.orm import Session
 from core.database import get_db
 from api.routes.dashboard import get_dashboard
@@ -171,9 +172,9 @@ def format_chat_history(messages: List[ChatMessage]):
     formatted = []
     for msg in messages:
         if msg.role == "user":
-            formatted.append(("human", msg.content))
+            formatted.append(HumanMessage(content=msg.content))
         elif msg.role == "assistant":
-            formatted.append(("ai", msg.content))
+            formatted.append(AIMessage(content=msg.content))
     return formatted
 
 
@@ -184,20 +185,20 @@ async def get_prediction_context(db: Session) -> str:
         
         # 월간 추이 정보
         trends_text = "\n".join([
-            f"  - {t.month} {t.year}: {t.total_amount:.0f}kg"
+            f"  - {t.month} {t.year}: {t.total_amount:.0f}개"
             for t in dashboard_data.monthly_trends[-3:]
         ])
         
         # 위험 지역 TOP 5
         risk_areas_text = "\n".join([
-            f"  - {area.beach_name}: {area.predicted_amount:.0f}kg (위험도: {area.risk_level.value}, 조치: {area.action_required.value})"
+            f"  - {area.beach_name}: {area.predicted_amount:.0f}개 (위험도: {area.risk_level.value}, 조치: {area.action_required.value})"
             for area in dashboard_data.risk_areas[:5]
         ])
         
         context = f"""\n[현재 예측 데이터 - {dashboard_data.target_month}]
 
 📊 월간 요약:
-- 총 예측 유입량: {dashboard_data.summary.total_predicted_amount:.0f}kg
+- 총 예측 유입량: {dashboard_data.summary.total_predicted_amount:.0f}개
 - 전월 대비: {dashboard_data.summary.previous_month_change:+.1f}%
 - 위험 지역: {dashboard_data.summary.high_risk_count}개소
 - 주의 지역: {dashboard_data.summary.medium_risk_count}개소
