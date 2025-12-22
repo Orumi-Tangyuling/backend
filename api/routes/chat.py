@@ -230,7 +230,7 @@ async def chat_user(request: ChatRequest, db: Session = Depends(get_db)):
         memory = get_or_create_memory(request.session_id)
         
         # 이전 대화 내역 포맷팅
-        chat_history = format_chat_history(memory[-10:])  # 최근 10개만 사용
+        # chat_history = format_chat_history(memory[-10:])  # 최근 10개만 사용
         
         # 예측 데이터 컨텍스트 가져오기
         prediction_context = await get_prediction_context(db)
@@ -244,7 +244,7 @@ async def chat_user(request: ChatRequest, db: Session = Depends(get_db)):
         # LangChain을 통한 Alan AI API 호출
         response_text = user_chat_chain.invoke({
             "input": enhanced_input,
-            "chat_history": chat_history
+            # "chat_history": chat_history
         })
         
         # 어시스턴트 응답 저장
@@ -272,7 +272,7 @@ async def chat_admin(request: ChatRequest, db: Session = Depends(get_db)):
         memory = get_or_create_memory(request.session_id)
         
         # 이전 대화 내역 포맷팅
-        chat_history = format_chat_history(memory[-10:])  # 최근 10개만 사용
+        # chat_history = format_chat_history(memory[-10:])  # 최근 10개만 사용
         
         # 예측 데이터 컨텍스트 가져오기
         prediction_context = await get_prediction_context(db)
@@ -286,7 +286,7 @@ async def chat_admin(request: ChatRequest, db: Session = Depends(get_db)):
         # LangChain을 통한 Alan AI API 호출
         response_text = admin_chat_chain.invoke({
             "input": enhanced_input,
-            "chat_history": chat_history
+            # "chat_history": chat_history
         })
         
         # 어시스턴트 응답 저장
