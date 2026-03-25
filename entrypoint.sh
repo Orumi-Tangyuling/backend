@@ -2,8 +2,11 @@
 set -e
 
 echo "Waiting for MySQL to be ready..."
+MYSQL_HOST="${TANGYULING_MYSQL_HOST:-mysql}"
+MYSQL_PORT="${TANGYULING_MYSQL_PORT:-3306}"
+
 # MySQL이 준비될 때까지 대기
-while ! nc -z $TANGYULING_MYSQL_HOST $TANGYULING_MYSQL_PORT; do
+while ! nc -z "$MYSQL_HOST" "$MYSQL_PORT"; do
   sleep 1
 done
 echo "MySQL is ready!"

@@ -20,10 +20,15 @@ services:
     restart: always
 
   api:
-    image: ${DOCKER_USERNAME}/tangyuling-api:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${DOCKER_USERNAME:-local}/tangyuling-api:latest
     container_name: tangyuling-api-prod
     ports:
       - "8000:8000"
+    expose:
+      - "8000"
     environment:
       - DATABASE_URL=mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-root}@mysql:3306/${MYSQL_DATABASE:-tangyuling}
       - TANGYULING_MYSQL_HOST=tangyuling-mysql-prod
@@ -33,12 +38,50 @@ services:
       - .env
     networks:
       - tangyuling-network
-      - proxy-network
     depends_on:
       mysql:
         condition: service_healthy
     restart: always
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: tangyuling-nginx-prod
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:-clean-be.sinryuji.me}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if [ -f /etc/letsencrypt/live/$${DOMAIN}/fullchain.pem ] && [ -f /etc/letsencrypt/live/$${DOMAIN}/privkey.pem ]; then
+          envsubst '$${DOMAIN}' < /etc/nginx/templates/https.conf.template > /etc/nginx/conf.d/default.conf
+        else
+          envsubst '$${DOMAIN}' < /etc/nginx/templates/http.conf.template > /etc/nginx/conf.d/default.conf
+        fi
+        nginx -g 'daemon off;'
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    networks:
+      - tangyuling-network
+    depends_on:
+      - api
+    restart: always
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: tangyuling-certbot
+    profiles:
+      - certbot
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    networks:
+      - tangyuling-network
 
 volumes:
   mysql_data:
@@ -46,6 +89,3 @@ volumes:
 networks:
   tangyuling-network:
     driver: bridge
-  proxy-network:
-    name: proxy-network
-    external: true
