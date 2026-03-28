@@ -2,8 +2,6 @@ services:
   mysql:
     image: mysql:8
     container_name: tangyuling-mysql-prod
-    ports:
-      - "3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-tangyuling}
@@ -11,7 +9,7 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
-      - tangyuling-network
+      - dev
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -20,72 +18,37 @@ services:
     restart: always
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ${DOCKER_USERNAME:-local}/tangyuling-api:latest
+    image: ghcr.io/${GHCR_OWNER:-sinryuji}/tangyuling-api:${IMAGE_TAG:-latest}
     container_name: tangyuling-api-prod
-    ports:
-      - "8000:8000"
     expose:
       - "8000"
     environment:
       - DATABASE_URL=mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-root}@mysql:3306/${MYSQL_DATABASE:-tangyuling}
-      - TANGYULING_MYSQL_HOST=tangyuling-mysql-prod
+      - TANGYULING_MYSQL_HOST=mysql
       - TANGYULING_MYSQL_PORT=3306
       - TZ=Asia/Seoul
     env_file:
       - .env
     networks:
-      - tangyuling-network
+      - dev
     depends_on:
       mysql:
         condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dev
+      - traefik.http.routers.tangyuling-api.rule=Host(`${PUBLIC_DOMAIN:-clean-be.sinryuji.me}`)
+      - traefik.http.routers.tangyuling-api.entrypoints=websecure
+      - traefik.http.routers.tangyuling-api.tls=true
+      - traefik.http.routers.tangyuling-api.tls.certresolver=le
+      - traefik.http.services.tangyuling-api.loadbalancer.server.port=8000
     restart: always
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-
-  nginx:
-    image: nginx:1.27-alpine
-    container_name: tangyuling-nginx-prod
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      - DOMAIN=${DOMAIN:-clean-be.sinryuji.me}
-    command:
-      - /bin/sh
-      - -c
-      - |
-        if [ -f /etc/letsencrypt/live/$${DOMAIN}/fullchain.pem ] && [ -f /etc/letsencrypt/live/$${DOMAIN}/privkey.pem ]; then
-          envsubst '$${DOMAIN}' < /etc/nginx/templates/https.conf.template > /etc/nginx/conf.d/default.conf
-        else
-          envsubst '$${DOMAIN}' < /etc/nginx/templates/http.conf.template > /etc/nginx/conf.d/default.conf
-        fi
-        nginx -g 'daemon off;'
-    volumes:
-      - ./nginx/templates:/etc/nginx/templates:ro
-      - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt
-    networks:
-      - tangyuling-network
-    depends_on:
-      - api
-    restart: always
-
-  certbot:
-    image: certbot/certbot:latest
-    container_name: tangyuling-certbot
-    profiles:
-      - certbot
-    volumes:
-      - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt
-    networks:
-      - tangyuling-network
 
 volumes:
   mysql_data:
 
 networks:
-  tangyuling-network:
-    driver: bridge
+  dev:
+    external: true
+    name: dev

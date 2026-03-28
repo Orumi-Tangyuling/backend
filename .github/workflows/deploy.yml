@@ -1,44 +1,53 @@
-name: CI/CD Pipeline
+name: Deploy Backend (GHCR + Traefik)
 
 on:
   workflow_dispatch:
-  # push:
-  #   branches:
-  #     - main
-  #     - develop
-  # pull_request:
-  #   branches:
-  #     - main
+  push:
+    branches:
+      - main
 
 env:
-  DOCKER_IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/tangyuling-api
-  DOCKER_TAG: ${{ github.sha }}
+  IMAGE_NAME: tangyuling-api
+  SSH_HOST: ssh.sinryuji.me
+  SSH_USER: sinryuji
+  SSH_PORT: "22"
+  PUBLIC_DOMAIN: clean-be.sinryuji.me
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    outputs:
+      ghcr_owner: ${{ steps.owner.outputs.ghcr_owner }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Normalize GHCR owner
+        id: owner
+        run: echo "ghcr_owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.DOCKER_IMAGE_NAME }}
+          images: ghcr.io/${{ steps.owner.outputs.ghcr_owner }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,prefix={{branch}}-
-            type=ref,event=branch
+            type=sha,format=long
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
@@ -49,13 +58,16 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.DOCKER_IMAGE_NAME }}:buildcache
-          cache-to: type=registry,ref=${{ env.DOCKER_IMAGE_NAME }}:buildcache,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ steps.owner.outputs.ghcr_owner }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ steps.owner.outputs.ghcr_owner }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: read
 
     steps:
       - name: Checkout code
@@ -66,63 +78,57 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/kanghyki
-          chmod 600 ~/.ssh/kanghyki
-          ssh-keyscan -p 4242 hyki.me >> ~/.ssh/known_hosts
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${{ env.SSH_PORT }}" "${{ env.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Ensure deploy directory exists on server
+        run: |
+          ssh -p "${{ env.SSH_PORT }}" -i ~/.ssh/deploy_key "${{ env.SSH_USER }}@${{ env.SSH_HOST }}" \
+            "mkdir -p ~/tangyuling"
 
       - name: Copy docker-compose.prod.yml to server
         run: |
-          scp -P 4242 -i ~/.ssh/kanghyki \
+          scp -P "${{ env.SSH_PORT }}" -i ~/.ssh/deploy_key \
             docker-compose.prod.yml \
-            blue@hyki.me:~/tangyuling/
+            "${{ env.SSH_USER }}@${{ env.SSH_HOST }}:~/tangyuling/"
 
       - name: Copy .env file to server
         run: |
           echo "${{ secrets.ENV_FILE }}" > .env
-          scp -P 4242 -i ~/.ssh/kanghyki \
+          scp -P "${{ env.SSH_PORT }}" -i ~/.ssh/deploy_key \
             .env \
-            blue@hyki.me:~/tangyuling/
+            "${{ env.SSH_USER }}@${{ env.SSH_HOST }}:~/tangyuling/"
 
       - name: Deploy to server
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
         run: |
-          ssh -p 4242 -i ~/.ssh/kanghyki blue@hyki.me << 'ENDSSH'
+          ssh -p "${{ env.SSH_PORT }}" -i ~/.ssh/deploy_key "${{ env.SSH_USER }}@${{ env.SSH_HOST }}" \
+            GHCR_USER="${{ github.actor }}" \
+            GHCR_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            GHCR_OWNER="${{ needs.build-and-push.outputs.ghcr_owner }}" \
+            IMAGE_TAG="${{ github.sha }}" \
+            PUBLIC_DOMAIN="${{ env.PUBLIC_DOMAIN }}" \
+            'bash -s' << 'ENDSSH'
+            set -euo pipefail
             cd ~/tangyuling
-            
-            # 환경 변수 설정
-            export DOCKER_USERNAME="${{ secrets.DOCKER_USERNAME }}"
-            
-            # Docker Hub 로그인
-            echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-            
-            # 최신 이미지 pull (api 서비스만)
-            docker compose -f docker-compose.prod.yml pull api
-            
-            # 기존 api 컨테이너 중지 및 제거
-            docker compose -f docker-compose.prod.yml stop api
-            docker compose -f docker-compose.prod.yml rm -f api
-            
-            # 새 api 컨테이너 시작
-            docker compose -f docker-compose.prod.yml up -d api
-            
-            # 사용하지 않는 이미지 정리
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            export GHCR_OWNER IMAGE_TAG PUBLIC_DOMAIN
+            docker compose -f docker-compose.prod.yml pull mysql api
+            docker compose -f docker-compose.prod.yml up -d mysql api
             docker image prune -af
-            
-            # 로그 확인 (최근 50줄)
-            docker compose -f docker-compose.prod.yml logs --tail=50
+            docker compose -f docker-compose.prod.yml logs --tail=50 api
           ENDSSH
 
       - name: Verify deployment
         run: |
-          ssh -p 4242 -i ~/.ssh/kanghyki blue@hyki.me << 'ENDSSH'
+          ssh -p "${{ env.SSH_PORT }}" -i ~/.ssh/deploy_key "${{ env.SSH_USER }}@${{ env.SSH_HOST }}" << 'ENDSSH'
             cd ~/tangyuling
             docker compose -f docker-compose.prod.yml ps
+            curl -fsS "https://clean-be.sinryuji.me/health" >/dev/null
           ENDSSH
 
       - name: Cleanup
         if: always()
         run: |
-          rm -f ~/.ssh/kanghyki
+          rm -f ~/.ssh/deploy_key
           rm -f .env

@@ -39,12 +39,6 @@ venv/
 .env.local
 .env.prod
 
-# Nginx / Let's Encrypt runtime files
-certbot/conf/**
-certbot/www/**
-!certbot/conf/.gitkeep
-!certbot/www/.gitkeep
-
 # OS
 .DS_Store
 Thumbs.db
