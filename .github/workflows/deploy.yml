@@ -131,7 +131,7 @@ jobs:
           ssh -p "${{ env.SSH_PORT }}" -i ~/.ssh/deploy_key "${{ env.SSH_USER }}@${{ env.SSH_HOST }}" << 'ENDSSH'
             cd ~/tangyuling
             docker compose -f docker-compose.prod.yml ps
-            curl -fsS "https://clean-be.sinryuji.me/health" >/dev/null
+            curl -kfsS "https://clean-be.sinryuji.me/health" >/dev/null
           ENDSSH
 
       - name: Cleanup
