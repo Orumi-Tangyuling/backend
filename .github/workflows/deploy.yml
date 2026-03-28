@@ -78,7 +78,14 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' | sed 's/\\n/\n/g' > ~/.ssh/deploy_key
+          tmp_key="$(mktemp)"
+          if printf '%s' "$SSH_PRIVATE_KEY" | base64 --decode > "$tmp_key" 2>/dev/null && ssh-keygen -yf "$tmp_key" >/dev/null 2>&1; then
+            mv "$tmp_key" ~/.ssh/deploy_key
+          else
+            rm -f "$tmp_key"
+            printf '%b' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          fi
+          ssh-keygen -yf ~/.ssh/deploy_key >/dev/null 2>&1 || (echo "Invalid SSH_PRIVATE_KEY format" && exit 1)
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p "${{ env.SSH_PORT }}" "${{ env.SSH_HOST }}" >> ~/.ssh/known_hosts
 
