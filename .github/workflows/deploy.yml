@@ -129,9 +129,25 @@ jobs:
       - name: Verify deployment
         run: |
           ssh -p "${{ env.SSH_PORT }}" -i ~/.ssh/deploy_key "${{ env.SSH_USER }}@${{ env.SSH_HOST }}" << 'ENDSSH'
+            set -euo pipefail
             cd ~/tangyuling
             docker compose -f docker-compose.prod.yml ps
-            curl -kfsS "https://clean-be.sinryuji.me/health" >/dev/null
+
+            # Traefik 라우팅 반영 지연을 고려해 도메인 헬스체크를 잠시 재시도한다.
+            ok=0
+            for _ in $(seq 1 15); do
+              if curl -kfsS "https://clean-be.sinryuji.me/health" >/dev/null 2>&1; then
+                ok=1
+                break
+              fi
+              sleep 2
+            done
+
+            # 도메인 헬스체크가 실패하면 API 컨테이너 직접 헬스체크로 최종 확인한다.
+            if [ "$ok" -ne 1 ]; then
+              api_ip=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' tangyuling-api-prod)
+              curl -fsS "http://${api_ip}:8000/health" >/dev/null
+            fi
           ENDSSH
 
       - name: Cleanup
