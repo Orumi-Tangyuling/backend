@@ -1,77 +1,165 @@
 import requests
-import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 from dotenv import load_dotenv
 from utils import location
 
 load_dotenv()
 
-def fetch_current(date: datetime, lat: float, lot: float):
-    base_url = os.environ.get('CURRENT_API_URL')
+DEFAULT_CURRENT_API_URL = "https://apis.data.go.kr/1192136/twRecent/GetTWRecentApiService"
+DEPRECATED_CURRENT_API_URL_PATTERNS = (
+    "khoa.go.kr/api/oceangrid/tidalcurrentarea/search.do",
+    "khoa.go.kr/api/oceangrid/tidalcurrent/search.do",
+)
 
-    target_date = date.strftime("%Y%m%d")
-    target_hour = date.strftime("%H")
-    target_minute = date.strftime("%M")
-    
-    min_y = int(np.floor(lat))
-    max_y = int(np.ceil(lat))
-    min_x = int(np.floor(lot))
-    max_x = int(np.ceil(lot))
 
+def _resolve_current_api_url() -> str:
+    configured = (os.environ.get('CURRENT_API_URL') or "").strip()
+    if configured and (
+        (configured.startswith('"') and configured.endswith('"'))
+        or (configured.startswith("'") and configured.endswith("'"))
+    ):
+        configured = configured[1:-1]
+
+    if not configured:
+        return DEFAULT_CURRENT_API_URL
+
+    configured_lower = configured.lower()
+    if any(pattern in configured_lower for pattern in DEPRECATED_CURRENT_API_URL_PATTERNS):
+        return DEFAULT_CURRENT_API_URL
+
+    return configured
+
+
+def _resolve_current_api_key() -> str | None:
+    # 배포 환경 호환을 위해 CURRENT_API_KEY를 우선 사용하고, 없으면 WIND_API_KEY를 사용한다.
+    return os.environ.get('CURRENT_API_KEY') or os.environ.get('WIND_API_KEY')
+
+
+def _parse_observation_time(value: str) -> datetime | None:
+    if not value:
+        return None
+
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+
+    return None
+
+
+def _fetch_tw_recent_items(
+    *,
+    base_url: str,
+    api_key: str,
+    obs_code: str,
+    req_date: str,
+    interval_min: int = 30,
+) -> list[dict]:
     params = {
-        "ServiceKey": os.environ.get('CURRENT_API_KEY'),
-        "Date": target_date,
-        "Hour": target_hour,
-        "Minute": target_minute,
-        "MaxX": max_x,
-        "MinX": min_x,
-        "MaxY": max_y,
-        "MinY": min_y,
-        "ResultType": "json"
+        "serviceKey": api_key,
+        "obsCode": obs_code,
+        "reqDate": req_date,
+        "min": interval_min,
+        "pageNo": 1,
+        "numOfRows": 300,
+        "type": "json",
     }
 
-    response = requests.get(base_url, params=params)
+    response = requests.get(base_url, params=params, timeout=20)
 
     if response.status_code != 200:
         raise Exception(f"API 요청 실패: {response.status_code}")
 
     try:
         data = response.json()
-    except ValueError as e:
+    except ValueError:
         raise Exception(f"JSON 파싱 실패: {response.text}")
 
-    if 'result' not in data or 'data' not in data['result']:
+    if 'header' not in data:
         raise Exception("응답 데이터 형식이 올바르지 않습니다")
 
-    # 요청한 위경도와 가장 가까운 데이터 찾기
-    min_distance = float('inf')
-    closest_data = None
+    if data['header']['resultCode'] != "00":
+        raise Exception(f"API 오류: {data['header'].get('resultMsg', 'Unknown error')}")
 
-    for d in data['result']['data']:
-        if 'current_dir' not in d or 'current_speed' not in d:
+    if 'body' not in data or 'items' not in data['body'] or 'item' not in data['body']['items']:
+        raise Exception("응답 데이터 형식이 올바르지 않습니다")
+
+    items = data['body']['items']['item']
+    if isinstance(items, dict):
+        return [items]
+    if isinstance(items, list):
+        return items
+    return []
+
+
+def _select_best_current_item(items: list[dict], target_time: datetime) -> dict | None:
+    candidates: list[tuple[float, dict]] = []
+    for item in items:
+        if item.get('crdir') is None or item.get('crsp') is None:
             continue
-        if 'pre_lat' not in d or 'pre_lon' not in d:
+
+        observed_at = _parse_observation_time(item.get('obsrvnDt'))
+        if observed_at is None:
             continue
-        
-        # 위경도 간의 거리 계산 (유클리드 거리)
-        data_lat = float(d['pre_lat'])
-        data_lon = float(d['pre_lon'])
-        distance = np.sqrt((lat - data_lat)**2 + (lot - data_lon)**2)
-        
-        if distance < min_distance:
-            min_distance = distance
-            closest_data = d
 
-    if closest_data is None:
-        raise Exception("유효한 데이터가 없습니다")
+        try:
+            float(item['crdir'])
+            float(item['crsp'])
+        except (TypeError, ValueError):
+            continue
 
-    return float(closest_data['current_dir']), float(closest_data['current_speed'])
+        distance = abs((observed_at - target_time).total_seconds())
+        candidates.append((distance, item))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[0])
+    return candidates[0][1]
+
+
+def fetch_current(date: datetime, lat: float, lot: float):
+    base_url = _resolve_current_api_url()
+    api_key = _resolve_current_api_key()
+    if not api_key:
+        raise Exception("CURRENT_API_KEY가 설정되지 않았습니다")
+
+    req_date = date.strftime("%Y%m%d")
+
+    # 가까운 관측소부터 순차 조회하여 유향/유속 결측 시 다음 관측소로 fallback
+    ordered_locations = sorted(
+        location.OBSERVATORY_LOCATIONS,
+        key=lambda loc: loc.distance_to(lat, lot)
+    )
+
+    errors: list[str] = []
+
+    for loc in ordered_locations:
+        try:
+            items = _fetch_tw_recent_items(
+                base_url=base_url,
+                api_key=api_key,
+                obs_code=loc.code,
+                req_date=req_date,
+                interval_min=30,
+            )
+            best = _select_best_current_item(items, date)
+            if best is None:
+                errors.append(f"{loc.code}: 유향/유속 유효값 없음")
+                continue
+
+            return float(best['crdir']), float(best['crsp'])
+        except Exception as e:
+            errors.append(f"{loc.code}: {str(e)}")
+
+    raise Exception(f"유효한 데이터가 없습니다 ({'; '.join(errors)})")
 
 def fetch_wind(date: datetime, lat: float, lot: float):
     base_url = os.environ.get('WIND_API_URL')
 
-    nearest = location.find_nearest_location(lat, lot)
+    nearest = location.find_nearest_legacy_location(lat, lot)
     
     # 날짜를 YYYYMMDD 형식으로 변환
     req_date = date.strftime("%Y%m%d")
@@ -129,7 +217,7 @@ def fetch_wind(date: datetime, lat: float, lot: float):
 def fetch_temperature(date: datetime, lat: float, lot: float):
     base_url = os.environ.get('TEMPERATURE_API_URL')
 
-    nearest = location.find_nearest_location(lat, lot)
+    nearest = location.find_nearest_legacy_location(lat, lot)
 
     # 날짜를 YYYYMMDD 형식으로 변환
     req_date = date.strftime("%Y%m%d")
@@ -144,7 +232,6 @@ def fetch_temperature(date: datetime, lat: float, lot: float):
     }
 
     response = requests.get(base_url, params=params)
-    print(f'response: {response.url}')
 
     if response.status_code != 200:
         raise Exception(f"API 요청 실패: {response.status_code}")

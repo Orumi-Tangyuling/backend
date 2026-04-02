@@ -100,11 +100,11 @@ jobs:
             docker-compose.prod.yml \
             "${{ env.SSH_USER }}@${{ env.SSH_HOST }}:~/tangyuling/"
 
-      - name: Copy .env file to server
+      - name: Copy .env.prod file to server
         run: |
-          echo "${{ secrets.ENV_FILE }}" > .env
+          echo "${{ secrets.ENV_FILE }}" > .env.prod
           scp -P "${{ env.SSH_PORT }}" -i ~/.ssh/deploy_key \
-            .env \
+            .env.prod \
             "${{ env.SSH_USER }}@${{ env.SSH_HOST }}:~/tangyuling/"
 
       - name: Deploy to server
@@ -120,10 +120,10 @@ jobs:
             cd ~/tangyuling
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             export GHCR_OWNER IMAGE_TAG PUBLIC_DOMAIN
-            docker compose -f docker-compose.prod.yml pull mysql api
-            docker compose -f docker-compose.prod.yml up -d mysql api
+            docker compose --env-file .env.prod -f docker-compose.prod.yml pull mysql api
+            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d mysql api
             docker image prune -af
-            docker compose -f docker-compose.prod.yml logs --tail=50 api
+            docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=50 api
           ENDSSH
 
       - name: Verify deployment
@@ -131,7 +131,7 @@ jobs:
           ssh -p "${{ env.SSH_PORT }}" -i ~/.ssh/deploy_key "${{ env.SSH_USER }}@${{ env.SSH_HOST }}" << 'ENDSSH'
             set -euo pipefail
             cd ~/tangyuling
-            docker compose -f docker-compose.prod.yml ps
+            docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 
             # Traefik 라우팅 반영 지연을 고려해 도메인 헬스체크를 잠시 재시도한다.
             ok=0
@@ -154,4 +154,4 @@ jobs:
         if: always()
         run: |
           rm -f ~/.ssh/deploy_key
-          rm -f .env
+          rm -f .env.prod

@@ -23,27 +23,43 @@ class ObservatoryLocation:
 # 제주도 관측소 위치 목록
 OBSERVATORY_LOCATIONS = [
     ObservatoryLocation(
+        name="제주남부",
+        latitude=32.090416,
+        longitude=126.965861,
+        code="KG_0021"
+    ),
+    ObservatoryLocation(
+        name="제주해",
+        latitude=33.70011111,
+        longitude=126.5905,
+        code="KG_0028"
+    )
+]
+
+# 풍속/수온 API에서 사용하는 레거시 관측소 코드
+LEGACY_OBSERVATORY_LOCATIONS = [
+    ObservatoryLocation(
         name="성산",
-        latitude=33 + 28/60 + 29/3600,   # N 33° 28' 29"
-        longitude=126 + 55/60 + 40/3600,  # E 126° 55' 40"
+        latitude=33 + 28/60 + 29/3600,
+        longitude=126 + 55/60 + 40/3600,
         code="DT_0022"
     ),
     ObservatoryLocation(
         name="모슬포",
-        latitude=33 + 12/60 + 52/3600,   # N 33° 12' 52"
-        longitude=126 + 15/60 + 4/3600,  # E 126° 15' 04"
+        latitude=33 + 12/60 + 52/3600,
+        longitude=126 + 15/60 + 4/3600,
         code="DT_0023"
     ),
     ObservatoryLocation(
         name="서귀포",
-        latitude=33 + 14/60 + 24/3600,   # N 33° 14' 24"
-        longitude=126 + 33/60 + 42/3600,  # E 126° 33' 42"
+        latitude=33 + 14/60 + 24/3600,
+        longitude=126 + 33/60 + 42/3600,
         code="DT_0010"
     ),
     ObservatoryLocation(
         name="제주",
-        latitude=33 + 31/60 + 39/3600,   # N 33° 31' 39"
-        longitude=126 + 32/60 + 35/3600,  # E 126° 32' 35"
+        latitude=33 + 31/60 + 39/3600,
+        longitude=126 + 32/60 + 35/3600,
         code="DT_0004"
     )
 ]
@@ -101,6 +117,16 @@ def find_nearest_location(latitude: float, longitude: float) -> ObservatoryLocat
     )
 
 
+def find_nearest_legacy_location(latitude: float, longitude: float) -> ObservatoryLocation:
+    """
+    풍속/수온 API용 레거시 관측소 중 가장 가까운 관측소를 찾습니다.
+    """
+    return min(
+        LEGACY_OBSERVATORY_LOCATIONS,
+        key=lambda loc: loc.distance_to(latitude, longitude)
+    )
+
+
 def get_location_by_code(code: str) -> ObservatoryLocation | None:
     """
     코드로 관측소 위치를 찾습니다.
@@ -111,4 +137,5 @@ def get_location_by_code(code: str) -> ObservatoryLocation | None:
     Returns:
         해당하는 ObservatoryLocation 또는 None
     """
-    return next((loc for loc in OBSERVATORY_LOCATIONS if loc.code == code), None)
+    all_locations = OBSERVATORY_LOCATIONS + LEGACY_OBSERVATORY_LOCATIONS
+    return next((loc for loc in all_locations if loc.code == code), None)

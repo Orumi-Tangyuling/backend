@@ -28,7 +28,7 @@ services:
       - TANGYULING_MYSQL_PORT=3306
       - TZ=Asia/Seoul
     env_file:
-      - .env
+      - .env.prod
     networks:
       - dev
     depends_on:
