@@ -31,9 +31,17 @@ def _resolve_current_api_url() -> str:
     return configured
 
 
-def _resolve_current_api_key() -> str | None:
-    # 배포 환경 호환을 위해 CURRENT_API_KEY를 우선 사용하고, 없으면 WIND_API_KEY를 사용한다.
-    return os.environ.get('CURRENT_API_KEY') or os.environ.get('WIND_API_KEY')
+def _resolve_current_api_keys() -> list[str]:
+    # CURRENT_API_KEY 우선 사용, 실패 시 WIND_API_KEY로 자동 재시도한다.
+    candidates = [
+        os.environ.get('CURRENT_API_KEY'),
+        os.environ.get('WIND_API_KEY'),
+    ]
+    keys: list[str] = []
+    for key in candidates:
+        if key and key not in keys:
+            keys.append(key)
+    return keys
 
 
 def _parse_observation_time(value: str) -> datetime | None:
@@ -122,8 +130,8 @@ def _select_best_current_item(items: list[dict], target_time: datetime) -> dict 
 
 def fetch_current(date: datetime, lat: float, lot: float):
     base_url = _resolve_current_api_url()
-    api_key = _resolve_current_api_key()
-    if not api_key:
+    api_keys = _resolve_current_api_keys()
+    if not api_keys:
         raise Exception("CURRENT_API_KEY가 설정되지 않았습니다")
 
     req_date = date.strftime("%Y%m%d")
@@ -136,23 +144,28 @@ def fetch_current(date: datetime, lat: float, lot: float):
 
     errors: list[str] = []
 
-    for loc in ordered_locations:
-        try:
-            items = _fetch_tw_recent_items(
-                base_url=base_url,
-                api_key=api_key,
-                obs_code=loc.code,
-                req_date=req_date,
-                interval_min=30,
-            )
-            best = _select_best_current_item(items, date)
-            if best is None:
-                errors.append(f"{loc.code}: 유향/유속 유효값 없음")
-                continue
+    for key_index, api_key in enumerate(api_keys, start=1):
+        key_errors: list[str] = []
 
-            return float(best['crdir']), float(best['crsp'])
-        except Exception as e:
-            errors.append(f"{loc.code}: {str(e)}")
+        for loc in ordered_locations:
+            try:
+                items = _fetch_tw_recent_items(
+                    base_url=base_url,
+                    api_key=api_key,
+                    obs_code=loc.code,
+                    req_date=req_date,
+                    interval_min=30,
+                )
+                best = _select_best_current_item(items, date)
+                if best is None:
+                    key_errors.append(f"{loc.code}: 유향/유속 유효값 없음")
+                    continue
+
+                return float(best['crdir']), float(best['crsp'])
+            except Exception as e:
+                key_errors.append(f"{loc.code}: {str(e)}")
+
+        errors.extend([f"key#{key_index} {message}" for message in key_errors])
 
     raise Exception(f"유효한 데이터가 없습니다 ({'; '.join(errors)})")
 

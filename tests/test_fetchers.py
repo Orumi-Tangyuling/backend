@@ -106,15 +106,20 @@ def test_fetch_current_selects_time_nearest_item():
             assert current_speed == pytest.approx(2.0)
 
 
-@patch.dict(os.environ, {"WIND_API_KEY": "wind-key"}, clear=False)
-def test_fetch_current_uses_wind_key_as_fallback(target_date):
+@patch.dict(os.environ, {"CURRENT_API_KEY": "invalid-key", "WIND_API_KEY": "wind-key"}, clear=False)
+def test_fetch_current_retries_with_wind_key_when_current_key_fails(target_date):
     fake_locations = [FakeLocation("KG_0028", 1.0)]
 
-    with patch.object(fetchers.location, "OBSERVATORY_LOCATIONS", fake_locations):
-        with patch("fetch.fetchers._fetch_tw_recent_items") as mock_fetch:
-            mock_fetch.return_value = [_valid_item("2026-04-03 00:00", 90.0, 10.0)]
-            with patch.dict(os.environ, {"CURRENT_API_KEY": ""}, clear=False):
-                fetchers.fetch_current(target_date, 33.4, 126.5)
+    def fake_fetch(**kwargs):
+        if kwargs["api_key"] == "invalid-key":
+            raise Exception("API 요청 실패: 401")
+        return [_valid_item("2026-04-03 00:00", 90.0, 10.0)]
 
-            call_kwargs = mock_fetch.call_args.kwargs
-            assert call_kwargs["api_key"] == "wind-key"
+    with patch.object(fetchers.location, "OBSERVATORY_LOCATIONS", fake_locations):
+        with patch("fetch.fetchers._fetch_tw_recent_items", side_effect=fake_fetch) as mock_fetch:
+            current_dir, current_speed = fetchers.fetch_current(target_date, 33.4, 126.5)
+
+            assert current_dir == pytest.approx(90.0)
+            assert current_speed == pytest.approx(10.0)
+            assert mock_fetch.call_args_list[0].kwargs["api_key"] == "invalid-key"
+            assert mock_fetch.call_args_list[1].kwargs["api_key"] == "wind-key"
